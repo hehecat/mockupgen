@@ -1,9 +1,14 @@
 import os
 import urllib.request
+import random
+import scipy.special
 
 import cv2
 import numpy as np
 from colorama import Fore, Style
+from PIL import Image, ImageDraw
+import random
+from math import pi, sin, cos
 
 try:
     from helpers import _r, _b, _g, _c, _m
@@ -34,15 +39,15 @@ def _adjust_image(image, black_point, white_point):
     a = image[:,:,3]
     image = image[:,:,0:3]
 
-    # The white point and black point are hex strings, so convert them to RGB
+    # 将十六进制颜色转换为RGB   
     white_point = tuple(int(white_point[i:i+2], 16) for i in (4, 2, 0))
     black_point = tuple(int(black_point[i:i+2], 16) for i in (4, 2, 0))
 
-    # Scale and offset colors so that each color goes from black_point to white_point
+    # 计算缩放和偏移量
     scale = (np.array(white_point) - np.array(black_point)) / 255.0
     offset = np.array(black_point)
 
-    # Apply the scale and offset
+    # 应用缩放和偏移量
     image = np.clip(image * scale + offset, 0, 255).astype(np.uint8)
     image = np.dstack((image, a))
 
@@ -85,10 +90,10 @@ def _contrast(image, amount):
 
 
 def _over_composite(background, foreground):
-    # Split out the alpha channel
+    # 将前景的alpha通道转换为浮点数
     alpha_foreground = foreground[:,:,3] / 255.0
 
-    # Set adjusted colors
+    # 调整颜色
     for color in range(0, 3):
         background[:,:,color] = alpha_foreground * foreground[:,:,color] + background[:,:,color] * (1 - alpha_foreground)
     return background
@@ -102,45 +107,45 @@ def _warn_for_different_aspect_ratios(ar1, ar2):
 
 
 def _mask_image(image, mask):
-    # Set the alpha channel of the image to the alpha channel of the mask
+    # 将图像的alpha通道设置为遮罩的alpha通道
     image[:,:,3] = mask[:,:,3]
     return image
 
 
 def save_image(image, output_file, default_name):
-    # Get extension if specified
+    # 获取扩展名(如果指定)
     extension = None
     if output_file:
         extension = os.path.splitext(output_file)[1]
         if extension:
             extension = extension[1:]
 
-    # Save the mockup
+    # 保存模拟图
     if output_file:
         if extension:
             try: 
                 cv2.imwrite(output_file, image, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
-                print(f'Saved mockup as {Fore.GREEN}{output_file}{Style.RESET_ALL}')
+                print(f'保存模拟图为 {Fore.GREEN}{output_file}{Style.RESET_ALL}')
             except:
-                print(_r(f'Invalid output file extension "{extension}"'))
-                exit(1)
+                print(_r(f'无效的输出文件扩�� "{extension}"'))
+                return
         else:
-            cv2.imwrite(output_file + '.png', image)
-            print(f'Saved mockup as {Fore.GREEN}{output_file + ".png"}{Style.RESET_ALL}')
+            output_file = output_file + '_' + os.path.splitext(default_name)[0] + '.png'
+            cv2.imwrite(output_file, image)
+            print(f'保存模拟图为 {Fore.GREEN}{output_file}{Style.RESET_ALL}')
     else:
         cv2.imwrite(default_name, image)
-        print(f'Saved mockup as {Fore.GREEN}{default_name}{Style.RESET_ALL}')
+        print(f'保存模拟图为 {Fore.GREEN}{default_name}{Style.RESET_ALL}')
 
+def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rotate, brightness, contrast, blur_background, blur_strength, geometric_background):
+    # 加载截图和模板
 
-def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rotate, brightness, contrast):
-    ### STEP 1: Load the screenshot and the mockup
-
-    # Load the screenshot and the mockup
+    # 加载截图和模板
     screenshot = _read_image(screenshot_file, cv2.IMREAD_UNCHANGED)
     mockup_img_file = os.path.join(mockup_dir, mockup['base_file'])
     mockup_img = _read_image(mockup_img_file, cv2.IMREAD_UNCHANGED)
 
-    # Ensure the screenshot and mockup are valid
+    # 确保截图和模板是有效的
     if screenshot is None:
         print(_r(f'Screenshot "{screenshot_file}" not found or invalid.'))
         return None
@@ -164,22 +169,23 @@ def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rot
     if mockup_img.dtype != np.uint8:
         print(_r(f"Couldn't convert mockup base image to uint8"))
         return None
+    
 
 
 
-    ### STEP 2: Upscale and adjust the files as needed
+    ### STEP 2: 放大和调整文件
 
-    # Upscale the mockup image if it's under the desired output width
+    # 放大模板图像，如果它低于所需的输出宽度
     mockup_upscale_factor = 1
     if output_width and mockup_img.shape[0] < output_width:
         mockup_upscale_factor = output_width / mockup_img.shape[0]
         mockup_img = cv2.resize(mockup_img, (0, 0), fx=mockup_upscale_factor, fy=mockup_upscale_factor, interpolation=cv2.INTER_CUBIC)
 
-    # Always upscale by 4 to improve the quality after the perspective warp 
+    # 始终放大4倍以提高透视变换后的质量
     mockup_img = cv2.resize(mockup_img, (0, 0), fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     mockup_upscale_factor *= 4
 
-    # Adjust the screenshot based on the mockup options
+    # 根据模板选项调整截图
     if "black_white_point" in mockup:
         screenshot = _adjust_image(screenshot, mockup['black_white_point'][0], mockup['black_white_point'][1])
     if "contrast" in mockup:
@@ -187,7 +193,7 @@ def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rot
     if "brightness" in mockup:
         screenshot = _brightness(screenshot, mockup['brightness'])
     
-    # Now adjust the screenshot based on the CLI options
+    # 根据CLI选项调整截图
     if contrast:
         screenshot = _contrast(screenshot, contrast)
     if brightness:
@@ -197,36 +203,36 @@ def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rot
 
 
 
-    ### STEP 3: Mask the screenshot
+    ### STEP 3: 遮罩截图
 
     if "mask_file" in mockup:
-        # Load the mask
+        # 加载遮罩
         mockup_mask = _read_image(os.path.join(mockup_dir, mockup['mask_file']), cv2.IMREAD_UNCHANGED)
 
-        # Ensure the mask is valid
+        # 确保遮罩是有效的
         if mockup_mask is None:
             print(_r(f'Template mask image "{mockup_dir + mockup["mask_file"]}" specified, but invalid. This is an issue with the template configuration.'))
             return None
 
-        # Center crop the image to match the aspect ratio of the mask
+        # 将图像居中裁剪以匹配遮罩的纵横比
         if crop:
             screenshot = _center_crop(screenshot, (mockup_mask.shape[1] / mockup_mask.shape[0]))
 
-        # Warn the user if the image is being stretched a lot
+        # 如果图像被拉伸很多，警告用户
         _warn_for_different_aspect_ratios((screenshot.shape[1] / screenshot.shape[0]), (mockup_mask.shape[1] / mockup_mask.shape[0]))
 
-        # Scale the mask to the size of the screenshot
+        # 将遮罩缩放到截图的大小
         mockup_mask = cv2.resize(mockup_mask, (screenshot.shape[1], screenshot.shape[0]))
 
-        # Apply the mask to the screenshot, but preserve transparency
+        # 将遮罩应用到截图，但保留透明度
         masked_screenshot = _mask_image(screenshot, mockup_mask)
 
     elif "mask_aspect_ratio" in mockup:
-        # Center crop the image to match the aspect ratio of the mask
+        # 将图像居中裁剪以匹配遮罩的纵横比
         if crop:
             screenshot = _center_crop(screenshot, mockup['mask_aspect_ratio'])
 
-        # Warn the user if the image is being stretched a lot
+        # 如果图像被拉伸很多，警告用户
         _warn_for_different_aspect_ratios((screenshot.shape[1] / screenshot.shape[0]), mockup['mask_aspect_ratio'])
         
         masked_screenshot = screenshot
@@ -236,9 +242,9 @@ def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rot
 
 
 
-    ### STEP 4: Warp the screenshot
+    ### STEP 4: 透视变换截图
 
-    # Warp the screenshot to the mockup perspective
+    # 透视变换截图到模板的透视
     mockup_points = np.array(mockup['screen_points'], dtype=np.float32) * mockup_upscale_factor
 
     screenshot_points = np.array([
@@ -257,17 +263,96 @@ def generate_mockup(mockup_dir, screenshot_file, mockup, output_width, crop, rot
         flags=cv2.INTER_NEAREST
     )
 
+        ### STEP 5: 将截图合成到模板并调整大小
 
-    ### STEP 5: Composite the screenshot onto the mockup and resize
-    
-    # Composite
+    # 将截图合成到模板
     mockup_img = _over_composite(mockup_img, warped_screenshot)
 
-    # Scale back down by 4
+    # 缩放回4倍
     mockup_img = cv2.resize(mockup_img, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
 
-    # Resize to the specified output width
+    # 调整到指定的输出宽度
     if output_width:
         mockup_img = cv2.resize(mockup_img, (output_width, int(mockup_img.shape[0] * (output_width / mockup_img.shape[1]))), interpolation=cv2.INTER_AREA)
     
+    if blur_background or geometric_background:
+        if geometric_background:
+            background = generate_geometric_background(mockup_img.shape[1], mockup_img.shape[0])
+        else:
+            # 确保 blur_strength 是奇数
+            blur_strength = int(blur_strength)
+            if blur_strength % 2 == 0:
+                blur_strength += 1
+            # 创建截图的模糊版本
+            blurred_screenshot = cv2.GaussianBlur(screenshot, (blur_strength, blur_strength), 0)
+            background = cv2.resize(blurred_screenshot, (mockup_img.shape[1], mockup_img.shape[0]))
+
+        # 确保背景是不透明的
+        if background.shape[2] == 3:
+            background = cv2.cvtColor(background, cv2.COLOR_BGR2BGRA)
+        background[:,:,3] = 255
+
+        # 创建一个遮罩，用于平滑过渡
+        mask = mockup_img[:,:,3].astype(float) / 255.0
+
+        # 应用平滑过渡
+        for c in range(3):  # 只处理RGB通道
+            mockup_img[:,:,c] = mockup_img[:,:,c] * mask + background[:,:,c] * (1 - mask)
+
+        # 单独处理alpha通道
+        mockup_img[:,:,3] = mockup_img[:,:,3] * mask + background[:,:,3] * (1 - mask)
+
+        mockup_img = np.clip(mockup_img, 0, 255).astype(np.uint8)
     return mockup_img
+
+
+def generate_geometric_background(width, height):
+    # 创建一个PIL图像
+    im = Image.new("RGB", (width, height), (0, 0, 0))
+    draw = ImageDraw.Draw(im)
+
+    # 定义网格大小，增加一些额外的行和列
+    grid_size = 12
+    cell_width = width // (grid_size - 2)
+    cell_height = height // (grid_size - 2)
+
+    # 创建顶点网格，扩展范围以覆盖整个图像
+    vertices = []
+    for i in range(grid_size + 1):
+        for j in range(grid_size + 1):
+            x = j * cell_width - cell_width + random.randint(-cell_width//2, cell_width//2)
+            y = i * cell_height - cell_height + random.randint(-cell_height//2, cell_height//2)
+            vertices.append((x, y))
+
+    # 定义颜色渐变
+    color1 = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    color2 = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+    # 创建多边形并应用颜色渐变
+    for i in range(grid_size):
+        for j in range(grid_size):
+            polygon = [
+                vertices[i * (grid_size + 1) + j],
+                vertices[i * (grid_size + 1) + j + 1],
+                vertices[(i + 1) * (grid_size + 1) + j + 1],
+                vertices[(i + 1) * (grid_size + 1) + j]
+            ]
+
+            # 计算多边形中心点的相对位置
+            center_x = sum(p[0] for p in polygon) / (4 * width)
+            center_y = sum(p[1] for p in polygon) / (4 * height)
+
+            # 使用双线性插值创建更平滑的颜色渐变
+            color = tuple(int(c1 * (1 - center_x) * (1 - center_y) + 
+                              c2 * center_x * center_y + 
+                              ((c1 + c2) / 2) * (center_x * (1 - center_y) + (1 - center_x) * center_y))
+                          for c1, c2 in zip(color1, color2))
+
+            # 绘制多边形
+            draw.polygon(polygon, fill=color)
+
+    # 将PIL图像转换为OpenCV格式
+    background = np.array(im)
+    background = cv2.cvtColor(background, cv2.COLOR_RGB2BGR)
+
+    return background

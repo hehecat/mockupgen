@@ -62,7 +62,7 @@ def get_template_index(templates_path_or_url):
     return template_index["templates"], version, templates_path_or_url
 
 def print_template_list(template_list):
-    # Group templates by category
+    # 按类别分组模板
     categories = {}
     for template in template_list:
         category = template.get('category', 'Uncategorized')
@@ -70,7 +70,7 @@ def print_template_list(template_list):
             categories[category] = []
         categories[category].append(template)
     
-    # Print the templates
+    # 打印模板
     i = 1
     for category in categories:
         print(_b(category+":"))
@@ -79,68 +79,82 @@ def print_template_list(template_list):
             i += 1
 
 def main():
-    # Parse the arguments
-    parser = ColoredArgParser(description='Mock up a screenshot in a device frame', prog='mockupgen')
-    parser.add_argument('screenshot', metavar="SCREENSHOT", nargs='?', type=str, help='screenshot file path')
-    parser.add_argument('-t', metavar="TEMPLATE", help='template number, name or slug')
-    parser.add_argument('-o', metavar="OUTFILE", type=str, default=None, help='output file name (use extension to specify format)')
-    parser.add_argument('-w', metavar="WIDTH", type=int, default=None, help='output width (will attempt to upscale)')
-    parser.add_argument('--crop', action='store_true', help='crop instead of stretching the screenshot to fit the template', default=False)
-    parser.add_argument('--rotate', metavar="R", type=int, default=0, help='number of times to rotate the screenshot 90 degrees ccw')
-    parser.add_argument('--brightness', metavar="B", type=float, default=1.0, help='screen brightness adjustment (default: 1.0)')
-    parser.add_argument('--contrast', metavar="C", type=float, default=1.0, help='screen contrast adjustment (default: 1.0)')
-    parser.add_argument('--list', action='store_true', help='list available templates', default=False)
-    parser.add_argument('--custom-templates', metavar="PATH/URL", type=str, default=None, help='specify a custom directory of templates (see README.md)')
+    # 解析参数
+    parser = ColoredArgParser(description='在设备框架中模拟一个或多个截图', prog='mockupgen')
+    parser.add_argument('screenshots', metavar="SCREENSHOT", nargs='+', type=str, help='一个或多个截图文件路径(支持通配符)')
+    parser.add_argument('-t', metavar="TEMPLATE", help='模板编号、名称或标识')
+    parser.add_argument('-o', metavar="OUTFILE", type=str, default=None, help='输出文件名(使用扩展名指定格式)')
+    parser.add_argument('-w', metavar="WIDTH", type=int, default=None, help='输出宽度(将尝试放大)')
+    parser.add_argument('--crop', action='store_true', help='裁剪而不是拉伸截图以适应模板', default=False)
+    parser.add_argument('--rotate', metavar="R", type=int, default=0, help='将截图逆时针旋转90度的次数')
+    parser.add_argument('--brightness', metavar="B", type=float, default=1.0, help='屏幕亮度调整(默认: 1.0)')
+    parser.add_argument('--contrast', metavar="C", type=float, default=1.0, help='屏幕对比度调整(默认: 1.0)')
+    parser.add_argument('--blur-background', action='store_true', help='对背景应用高斯模糊效果', default=False)
+    parser.add_argument('--blur-strength', metavar="S", type=float, default=21.0, help='背景模糊强度 (范围: 3.0-51.0, 默认: 21.0)')
+    parser.add_argument('--list', action='store_true', help='列出可用模板', default=False)
+    parser.add_argument('--custom-templates', metavar="PATH/URL", type=str, default=None, help='指定自定义模板目录(参见 README.md)')
+    parser.add_argument('--geometric-background', action='store_true', help='使用随机几何图形作为背景', default=False)
     args = parser.parse_args()
 
-    # Accept a template URL or path
+    # 接受模板 URL 或路径
     if args.custom_templates:
         template_list, template_version, template_dir = get_template_index(args.custom_templates)
-        print(f'Using custom template directory: {_b(args.custom_templates)} (version {_b(template_version)})')
+        print(f'使用自定义模板目录: {_b(args.custom_templates)} (版本 {_b(template_version)})')
     else:
         template_list, template_version, template_dir = get_template_index(DEFAULT_TEMPLATE_DIR)
-        print(f'Using {_b("mockupgen-templates")} (version {_b(template_version)})')
+        print(f'使用 {_b("mockupgen-templates")} (版本 {_b(template_version)})')
 
-    # List the templates if requested
+    # 如果请求,列出模板
     if args.list:
         print_template_list(template_list)
         exit(0)
 
-    # Ensure the screenshot exists
-    if not args.screenshot:
-        print(_r('Screenshot not specified'))
+    # 处理通配符并获取所有匹配的文件
+    import glob
+    screenshot_files = []
+    for pattern in args.screenshots:
+        screenshot_files.extend(glob.glob(pattern))
+
+    # 确保至少有一个截图存在
+    if not screenshot_files:
+        print(_r('未找到匹配的截图文件'))
         print()
         parser.print_help()
         exit(1)
-    if not os.path.isfile(args.screenshot):
-        print(_r('Screenshot not found'))
-        exit(1)
 
-    # List the templates
+    # 获取模板
     template = get_valid_template(template_list, args.t)
     while not template:
         print_template_list(template_list)
-        template = get_valid_template(template_list, input(f'{_m("Select one: ")}'))
+        template = get_valid_template(template_list, input(f'{_m("选择一个: ")}'))
 
     print()
-    print(f'Generating mockup for {_b(template["name"])} - {_b(template["slug"])}')
+    print(f'使用模板 {_b(template["name"])} - {_b(template["slug"])}')
 
     if 'author' in template:
-        print(f'Template created by {_g(template["author"])}')
+        print(f'模板创建者 {_g(template["author"])}')
     if 'backlink' in template:
-        print(f'Original template: {_g(template["backlink"])}')
+        print(f'原始模板: {_g(template["backlink"])}')
     print()
 
-    # Generate the mockup
-    generated_mockup = generate_mockup(template_dir, args.screenshot, template, args.w, args.crop, args.rotate, args.brightness, args.contrast)
+    # 处理每个截图
+    for screenshot in screenshot_files:
+        if not os.path.isfile(screenshot):
+            print(_r(f'截图未找到: {screenshot}'))
+            continue
 
-    if generated_mockup is None:
-        print(_r('Error generating mockup'))
-        exit(1)
+        print(f'正在处理截图: {_b(screenshot)}')
 
-    default_name = os.path.splitext(os.path.basename(args.screenshot))[0] + '_mockup.png'
-    save_image(generated_mockup, args.o, default_name)
+        # 生成模拟图
+        generated_mockup = generate_mockup(template_dir, screenshot, template, args.w, args.crop, args.rotate, args.brightness, args.contrast, args.blur_background, args.blur_strength, args.geometric_background)
+        if generated_mockup is None:
+            print(_r(f'生成模拟图时出错: {screenshot}'))
+            continue
 
+        default_name = os.path.splitext(os.path.basename(screenshot))[0] + '_mockup.png'
+        save_image(generated_mockup, args.o, default_name)
+
+        print()
 
 if __name__ == '__main__':
     main()
